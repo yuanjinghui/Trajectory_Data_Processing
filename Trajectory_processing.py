@@ -9,26 +9,38 @@ import os
 import time
 
 
-def get_ped_veh_conflict(trajectory_data, threshold):
+# def get_filter_trajectory_length(trajectory, length_threshold):
+
+
+
+def get_ped_veh_conflict(trajectory_data, threshold, intersect_buffer_x, intersect_buffer_y):
     """
     :param trajectory_data: p1x, p1y represent the upper left corner; p2x, p2y represent the bottom right corner;
-    bx, by represent center point; cx, cy represent bottom middle point;
-    type: https://gist.github.com/AruniRC/7b3dadd004da04c80198557db5da4bda, id-1
+            bx, by represent center point; cx, cy represent bottom middle point;
+            type: https://gist.github.com/AruniRC/7b3dadd004da04c80198557db5da4bda, id-1
+            lostCounter: number of frames
     :param threshold: threshold for identify conflict
     :return: identified conflicts
     """
     threshold_frame = threshold * 30
+    # exclude the detection id with insufficient trajectory
+    number_of_frames = trajectory_data.groupby(by='objectID', as_index=False).size().reset_index(name='counts')
+    list_of_id = number_of_frames.loc[number_of_frames['counts'] >= 15]['objectID'].tolist()
+    trajectory_data = trajectory_data.loc[trajectory_data['objectID'].isin(list_of_id)]
+
     pedestrian_trajectory = trajectory_data.loc[(trajectory_data['type'].isin([0, 1])) & (trajectory_data['zone'].isin([2, 3, 4, 5, 6, 7])), :].sort_values(by=['objectID', 'frameNUM']).reset_index(drop=True)
-    veh_trajectory = trajectory_data.loc[~(trajectory_data['type'].isin([0, 1]))].sort_values(by=['objectID', 'frameNUM']).reset_index(drop=True)
+    # Exclude tiny detections and pedestrian in vehicle (y axis smaller than 50)
+    pedestrian_trajectory = pedestrian_trajectory.loc[pedestrian_trajectory['p2y'] >= (pedestrian_trajectory['p1y'] + 50)].reset_index(drop=True)
+
+    veh_trajectory = trajectory_data.loc[trajectory_data['type'].isin([2, 5, 7])].sort_values(by=['objectID', 'frameNUM']).reset_index(drop=True)
 
     ped_list = pedestrian_trajectory['objectID'].unique()
 
     ped_veh_conflicts = []
     for ped in ped_list:
         ped_trajectory = pedestrian_trajectory.loc[pedestrian_trajectory['objectID'] == ped].reset_index(drop=True)
-        # ped_trajectory = pd.merge(ped_trajectory, veh_trajectory, how='left', left_on=['cx', 'cy'], right_on=['cx', 'cy'], suffixes=('_ped', '_veh'))
 
-        # filter out all the
+        # filter out all the non-essential vehicle trajectories for PET calculation
         tem_veh = veh_trajectory.loc[(veh_trajectory['p1x'] <= ped_trajectory['cx'].max()) & (veh_trajectory['p2x'] >= ped_trajectory['cx'].min())
                                      & (veh_trajectory['p1y'] <= ped_trajectory['cy'].max()) & (veh_trajectory['p2y'] >= ped_trajectory['cy'].min())
                                      & (veh_trajectory['frameNUM'] <= (ped_trajectory['frameNUM'].max() + threshold_frame))
@@ -43,7 +55,11 @@ def get_ped_veh_conflict(trajectory_data, threshold):
         # Euclidean distance between ped and veh
         conflict['distance'] = np.linalg.norm(conflict[['cx_veh', 'cy_veh']].values - conflict[['cx_ped', 'cy_ped']].values, axis=1)
         conflict['ped_veh_overlap'] = np.where((conflict['cx_ped'].between(conflict['p1x_veh'], conflict['p2x_veh'])) & (conflict['cy_ped'].between(conflict['p1y_veh'], conflict['p2y_veh'])), 1, 0)
-        conflict = conflict.loc[conflict['ped_veh_overlap'] == 1].sort_values(by=['objectID_veh', 'frameNUM_veh']).reset_index(drop=True)
+
+        # Condition of buffer intersect
+        conflict['ped_veh_buffer_intersect'] = np.where((conflict['cx_ped'].between(conflict['cx_veh'] - intersect_buffer_x, conflict['cx_veh'] + intersect_buffer_x))
+                                                        & (conflict['cy_ped'].between(conflict['cy_veh'] - intersect_buffer_y, conflict['cy_veh'] + intersect_buffer_y)), 1, 0)
+        conflict = conflict.loc[(conflict['ped_veh_overlap'] == 1) & (conflict['ped_veh_buffer_intersect'] == 1)].sort_values(by=['objectID_veh', 'frameNUM_veh']).reset_index(drop=True)
 
         if len(conflict) > 0:
             conflict = conflict.loc[conflict.groupby(by=['objectID_veh'], as_index=False)["distance"].idxmin()]
@@ -58,7 +74,7 @@ def get_ped_veh_conflict(trajectory_data, threshold):
     return ped_veh_conflicts
 
 
-def get_ped_conflict_data(CCTV_Ped, threshold):
+def get_ped_conflict_data(CCTV_Ped, threshold, intersect_buffer_x, intersect_buffer_y):
     """
 
     :param CCTV_Ped:
@@ -93,7 +109,7 @@ def get_ped_conflict_data(CCTV_Ped, threshold):
                 print('file not found')
                 pass
 
-            conflicts = get_ped_veh_conflict(trajectory_data, threshold)
+            conflicts = get_ped_veh_conflict(trajectory_data, threshold, intersect_buffer_x, intersect_buffer_y)
 
             if len(conflicts) > 0:
                 conflicts = pd.concat(conflicts, ignore_index=True)
@@ -118,12 +134,16 @@ if __name__ == '__main__':
     CCTV_Ped['Video Name'] = CCTV_Ped['Video Name'].astype(str)
     CCTV_Ped['Pedestrian'] = CCTV_Ped['Pedestrian'].astype(str)
 
-    threshold = 3
+    threshold = 5
+    intersect_buffer_x = 40
+    intersect_buffer_y = 20
     # call the function
     start = time.process_time()
-    conflict_data = get_ped_conflict_data(CCTV_Ped, threshold)
+    conflict_data = get_ped_conflict_data(CCTV_Ped, threshold, intersect_buffer_x, intersect_buffer_y)
     print(time.process_time() - start)
 
-    conflict_data.to_csv('conflict_data.csv', sep=',')
+    conflict_data.to_csv('conflict_data_r.csv', sep=',')
 
-
+#
+# intersection = 'US17-92_@_13TH_ST'
+# i = 1
