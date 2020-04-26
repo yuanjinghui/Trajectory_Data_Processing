@@ -64,11 +64,11 @@ def ped_reclassification(trajectory_data):
     if general_angle <= 90:
         try:
             ped_zone_5 = get_trajectory_slope(trajectory_data, [5])
-            ped_motorcyce_5 = ped_zone_5.loc[(ped_zone_5['type_last'].isin([0, 1])) & ((ped_zone_5['counts'] >= 30) | (ped_zone_5['trajectory_length'] >= 50)) &
+            ped_motorcyce_5 = ped_zone_5.loc[(ped_zone_5['type_last'].isin([0, 1])) & ((ped_zone_5['counts'] >= 30) | (ped_zone_5['trajectory_length'] >= 100)) &
                                              (ped_zone_5['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), 180 - general_angle))]['objectID'].tolist()
 
             ped_zone_6 = get_trajectory_slope(trajectory_data, [6])
-            ped_motorcyce_6 = ped_zone_6.loc[(ped_zone_6['type_last'].isin([0, 1])) & ((ped_zone_6['counts'] >= 30) | (ped_zone_6['trajectory_length'] >= 50)) &
+            ped_motorcyce_6 = ped_zone_6.loc[(ped_zone_6['type_last'].isin([0, 1])) & ((ped_zone_6['counts'] >= 30) | (ped_zone_6['trajectory_length'] >= 100)) &
                                              (ped_zone_6['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), 180 - general_angle))]['objectID'].tolist()
 
             trajectory_data.loc[(trajectory_data['objectID'].isin(ped_motorcyce_5)) | (trajectory_data['objectID'].isin(ped_motorcyce_6)), 'type'] = 3
@@ -79,11 +79,11 @@ def ped_reclassification(trajectory_data):
     elif general_angle > 90:
         try:
             ped_zone_5 = get_trajectory_slope(trajectory_data, [5])
-            ped_motorcyce_5 = ped_zone_5.loc[(ped_zone_5['type_last'].isin([0, 1])) & ((ped_zone_5['counts'] >= 30) | (ped_zone_5['trajectory_length'] >= 50)) &
+            ped_motorcyce_5 = ped_zone_5.loc[(ped_zone_5['type_last'].isin([0, 1])) & ((ped_zone_5['counts'] >= 30) | (ped_zone_5['trajectory_length'] >= 100)) &
                                              (ped_zone_5['trajectory_angle'].between(180 - general_angle, min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
 
             ped_zone_6 = get_trajectory_slope(trajectory_data, [6])
-            ped_motorcyce_6 = ped_zone_6.loc[(ped_zone_6['type_last'].isin([0, 1])) & ((ped_zone_6['counts'] >= 30) | (ped_zone_6['trajectory_length'] >= 50)) &
+            ped_motorcyce_6 = ped_zone_6.loc[(ped_zone_6['type_last'].isin([0, 1])) & ((ped_zone_6['counts'] >= 30) | (ped_zone_6['trajectory_length'] >= 100)) &
                                              (ped_zone_6['trajectory_angle'].between(180 - general_angle, min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
 
             trajectory_data.loc[(trajectory_data['objectID'].isin(ped_motorcyce_5)) | (trajectory_data['objectID'].isin(ped_motorcyce_6)), 'type'] = 3
@@ -239,9 +239,9 @@ if __name__ == '__main__':
     conflict_data = get_ped_conflict_data(CCTV_Ped, threshold, intersect_buffer_x, intersect_buffer_y)
     print(time.process_time() - start)
 
-    conflict_data.to_csv('conflict_data_r12.csv', sep=',')
+    conflict_data.to_csv('conflict_data_r13.csv', sep=',')
 
 
 # intersection = 'US17-92_@_25TH_ST'
-# i = 99
+# i = 71
 # ped = 529
