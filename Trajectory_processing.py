@@ -9,14 +9,14 @@ import os
 import time
 
 
-def ped_reclassification(trajectory_data):
+def get_trajectory_slope(trajectory_data, zone_list):
     """
-    Exclude the conflicts caused by on road motorcycles
+
     :param trajectory_data:
+    :param zone_list:
     :return:
     """
-    zone_5 = trajectory_data.loc[trajectory_data['zone'] == 5].reset_index(drop=True)
-    # veh_data_zone_5 = trajectory_data.loc[(trajectory_data['zone'] == 5) & (trajectory_data['type'].isin([2, 5, 7]))].reset_index(drop=True)
+    zone_5 = trajectory_data.loc[trajectory_data['zone'].isin(zone_list)].reset_index(drop=True)
     zone_5 = zone_5.sort_values(by=['objectID', 'frameNUM']).reset_index(drop=True)
 
     # select the first and last trajectory points and calculate the trajectory slope
@@ -25,17 +25,72 @@ def ped_reclassification(trajectory_data):
     count = zone_5.groupby('objectID', as_index=False).size().reset_index(name='counts')
     first = first.merge(last, how='left', left_on='objectID', right_on='objectID', suffixes=('_first', '_last')).reset_index(drop=True)
     first = first.merge(count, how='left', left_on='objectID', right_on='objectID').reset_index(drop=True)
-    first['trajectory_slope'] = abs((first['by_last'] - first['by_first'])/(first['bx_last'] - first['bx_first']))
+    first['trajectory_slope'] = (first['cy_last'] - first['cy_first'])/(first['cx_last'] - first['cx_first'])
 
-    general_slope = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7]))]['trajectory_slope'].quantile(0.5)
+    # convert slope to angle [-90, 90]
+    first['trajectory_angle'] = (np.arctan(first['trajectory_slope'])/np.pi)*180
 
-    # modify the pedestrian in zone 5 traveling in line with vehicles to be motorcycle
-    try:
-        ped_motorcyce = first.loc[(first['type_last'].isin([0, 1])) & (first['trajectory_slope'].between(general_slope - 0.4, general_slope + 0.4))]['objectID'].tolist()
-        trajectory_data.loc[trajectory_data['objectID'].isin(ped_motorcyce), 'type'] = 3
-    except:
-        print('no changes')
-        pass
+    # convert angle from [-90, 90] to [0, 180]
+    first.loc[first['trajectory_slope'] <= 0, 'trajectory_angle'] = \
+        first.loc[first['trajectory_slope'] <= 0, 'trajectory_angle'] + 180
+
+    # convert angle from [-90, 90] to [0, 360]
+    # first.loc[(first['trajectory_slope'] <= 0) & (first['cy_first'] >= first['cy_last']), 'trajectory_angle'] = \
+    #     first.loc[(first['trajectory_slope'] <= 0) & (first['cy_first'] >= first['cy_last']), 'trajectory_angle'] + 90
+    # first.loc[(first['trajectory_slope'] <= 0) & (first['cy_first'] < first['cy_last']), 'trajectory_angle'] = \
+    #     first.loc[(first['trajectory_slope'] <= 0) & (first['cy_first'] < first['cy_last']), 'trajectory_angle'] + 270
+    # first.loc[(first['trajectory_slope'] > 0) & (first['cy_first'] <= first['cy_last']), 'trajectory_angle'] = \
+    #     first.loc[(first['trajectory_slope'] <= 0) & (first['cy_first'] <= first['cy_last']), 'trajectory_angle'] + 90
+    # first.loc[(first['trajectory_slope'] > 0) & (first['cy_first'] > first['cy_last']), 'trajectory_angle'] = \
+    #     first.loc[(first['trajectory_slope'] > 0) & (first['cy_first'] > first['cy_last']), 'trajectory_angle'] + 270
+
+    first['trajectory_length'] = np.linalg.norm(first[['cx_last', 'cy_last']].values - first[['cx_first', 'cy_first']].values, axis=1)
+    return first
+
+
+def ped_reclassification(trajectory_data):
+    """
+    Exclude the conflicts caused by on road motorcycles
+    :param trajectory_data:
+    :return:
+    """
+    first = get_trajectory_slope(trajectory_data, [5])
+
+    general_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['cy_first'] < first['cy_last']) & (first['trajectory_length'] >= 50)]['trajectory_angle'].quantile(0.5)
+    min_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['cy_first'] < first['cy_last']) & (first['trajectory_length'] >= 50)]['trajectory_angle'].min()
+    max_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['cy_first'] < first['cy_last']) & (first['trajectory_length'] >= 50)]['trajectory_angle'].max()
+
+    # modify the pedestrian in zone 5 and 6 traveling in line with vehicles to be motorcycle
+    if general_angle <= 90:
+        try:
+            ped_zone_5 = get_trajectory_slope(trajectory_data, [5])
+            ped_motorcyce_5 = ped_zone_5.loc[(ped_zone_5['type_last'].isin([0, 1])) & ((ped_zone_5['counts'] >= 30) | (ped_zone_5['trajectory_length'] >= 50)) &
+                                             (ped_zone_5['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), 180 - general_angle))]['objectID'].tolist()
+
+            ped_zone_6 = get_trajectory_slope(trajectory_data, [6])
+            ped_motorcyce_6 = ped_zone_6.loc[(ped_zone_6['type_last'].isin([0, 1])) & ((ped_zone_6['counts'] >= 30) | (ped_zone_6['trajectory_length'] >= 50)) &
+                                             (ped_zone_6['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), 180 - general_angle))]['objectID'].tolist()
+
+            trajectory_data.loc[(trajectory_data['objectID'].isin(ped_motorcyce_5)) | (trajectory_data['objectID'].isin(ped_motorcyce_6)), 'type'] = 3
+        except:
+            print('no changes')
+            pass
+
+    elif general_angle > 90:
+        try:
+            ped_zone_5 = get_trajectory_slope(trajectory_data, [5])
+            ped_motorcyce_5 = ped_zone_5.loc[(ped_zone_5['type_last'].isin([0, 1])) & ((ped_zone_5['counts'] >= 30) | (ped_zone_5['trajectory_length'] >= 50)) &
+                                             (ped_zone_5['trajectory_angle'].between(180 - general_angle, min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
+
+            ped_zone_6 = get_trajectory_slope(trajectory_data, [6])
+            ped_motorcyce_6 = ped_zone_6.loc[(ped_zone_6['type_last'].isin([0, 1])) & ((ped_zone_6['counts'] >= 30) | (ped_zone_6['trajectory_length'] >= 50)) &
+                                             (ped_zone_6['trajectory_angle'].between(180 - general_angle, min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
+
+            trajectory_data.loc[(trajectory_data['objectID'].isin(ped_motorcyce_5)) | (trajectory_data['objectID'].isin(ped_motorcyce_6)), 'type'] = 3
+        except:
+            print('no changes')
+            pass
+
     return trajectory_data
 
 
@@ -49,12 +104,17 @@ def get_ped_veh_conflict(trajectory_data, threshold, intersect_buffer_x, interse
     :return: identified conflicts
     """
     threshold_frame = threshold * 30
-    # exclude the detection id with insufficient trajectory
+    # exclude the detection id with insufficient trajectory (frames)
     number_of_frames = trajectory_data.groupby(by='objectID', as_index=False).size().reset_index(name='counts')
-    list_of_id = number_of_frames.loc[number_of_frames['counts'] >= 15]['objectID'].tolist()
+    list_of_id = number_of_frames.loc[number_of_frames['counts'] >= 30]['objectID'].tolist()
     trajectory_data = trajectory_data.loc[trajectory_data['objectID'].isin(list_of_id)]
 
-    pedestrian_trajectory = trajectory_data.loc[(trajectory_data['type'].isin([0, 1])) & (trajectory_data['zone'].isin([2, 3, 4, 5, 6, 7])), :].sort_values(by=['objectID', 'frameNUM']).reset_index(drop=True)
+    # exclude the detection id with insufficient trajectory (length)
+    trajectory_length = get_trajectory_slope(trajectory_data, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+    stoped_object = trajectory_length.loc[trajectory_length['trajectory_length'] <= 25]['objectID'].tolist()
+    trajectory_data = trajectory_data.loc[~trajectory_data['objectID'].isin(stoped_object)].reset_index(drop=True)
+
+    pedestrian_trajectory = trajectory_data.loc[(trajectory_data['type'].isin([0, 1])) & (trajectory_data['zone'].isin([2, 3, 4, 5, 6, 7, 9])), :].sort_values(by=['objectID', 'frameNUM']).reset_index(drop=True)
     # Exclude tiny detections and pedestrian in vehicle (y axis smaller than 50)
     pedestrian_trajectory = pedestrian_trajectory.loc[pedestrian_trajectory['p2y'] >= (pedestrian_trajectory['p1y'] + 50)].reset_index(drop=True)
 
@@ -90,8 +150,7 @@ def get_ped_veh_conflict(trajectory_data, threshold, intersect_buffer_x, interse
         if len(conflict) > 0:
             conflict = conflict.loc[conflict.groupby(by=['objectID_veh'], as_index=False)["distance"].idxmin()]
             conflict['pet'] = (conflict['frameNUM_veh'] - conflict['frameNUM_ped'])/30
-            conflict = conflict.loc[abs(conflict['pet']) <= threshold].reset_index(drop=True)
-
+            conflict = conflict.loc[(abs(conflict['pet']) <= threshold) & (conflict['lostCounter_ped'] < 30) & (conflict['objectID_veh'] != conflict['objectID_ped'])].reset_index(drop=True)
             ped_veh_conflicts.append(conflict)
 
         else:
@@ -120,7 +179,7 @@ def get_ped_conflict_data(CCTV_Ped, threshold, intersect_buffer_x, intersect_buf
         sub_intersections = os.listdir(sub_intersections_path)
 
         # for select intersection, filter all the sub videos with pedestrians
-        intersection_pedestrain_subvideos = CCTV_Ped.loc[(CCTV_Ped['Video Name'].str.contains(intersection)) & (CCTV_Ped['Pedestrian'] == '1')].reset_index(drop=True)
+        intersection_pedestrain_subvideos = CCTV_Ped.loc[(CCTV_Ped['Video Name'].str.contains(intersection)) & ((CCTV_Ped['Pedestrian'] == '1') | (CCTV_Ped['Cyclist'] == 1))].reset_index(drop=True)
 
         for i in range(len(intersection_pedestrain_subvideos)):
             video_name = intersection_pedestrain_subvideos.loc[i, 'Video Name']
@@ -131,6 +190,14 @@ def get_ped_conflict_data(CCTV_Ped, threshold, intersect_buffer_x, intersect_buf
 
             try:
                 trajectory_data = pd.read_csv(os.path.join(sub_intersections_path, video_name, trajectory_data_filename), skiprows=1)
+                # rewrite the type to be the most frequent type for every object
+                object_type = trajectory_data.groupby('objectID', as_index=False).agg({'type': np.median})
+                trajectory_data = trajectory_data.join(object_type.set_index('objectID'), on='objectID', rsuffix='_new')
+                trajectory_data = trajectory_data.drop(columns='type')
+                trajectory_data.rename(columns={'type_new': 'type'}, inplace=True)
+
+                # trajectory_data = trajectory_data.loc[trajectory_data['lostCounter'] <= 30].reset_index(drop=True)
+
                 trajectory_data = ped_reclassification(trajectory_data)
                 conflicts = get_ped_veh_conflict(trajectory_data, threshold, intersect_buffer_x, intersect_buffer_y)
 
@@ -162,15 +229,19 @@ if __name__ == '__main__':
     CCTV_Ped['Pedestrian'] = CCTV_Ped['Pedestrian'].astype(str)
 
     threshold = 5
-    intersect_buffer_x = 40
+    # intersect_buffer_x = 60
+    # intersect_buffer_y = 30
+
+    intersect_buffer_x = 20
     intersect_buffer_y = 20
     # call the function
     start = time.process_time()
     conflict_data = get_ped_conflict_data(CCTV_Ped, threshold, intersect_buffer_x, intersect_buffer_y)
     print(time.process_time() - start)
 
-    conflict_data.to_csv('conflict_data_r1.csv', sep=',')
+    conflict_data.to_csv('conflict_data_r12.csv', sep=',')
 
 
-# intersection = 'US17-92_@_13TH_ST'
-# # i = 30
+# intersection = 'US17-92_@_25TH_ST'
+# i = 99
+# ped = 529
