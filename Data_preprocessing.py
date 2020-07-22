@@ -115,7 +115,7 @@ def del_duplicate_trajectory(pedestrian_trajectory):
                         coefficient_of_variance = ped_1['relative_dist'].std()/ped_1['relative_dist'].mean()
 
                         # identify the overlapping based on the coefficient of variance in relative distance
-                        if coefficient_of_variance < 0.2:
+                        if coefficient_of_variance < 0.15 and ped_1['relative_dist'].mean() < 50:
                             overlapped_id.append(actual_id_2)
                             tem_dict = tem_dict.drop(j, axis=0)
 
@@ -142,8 +142,8 @@ def del_duplicate_trajectory(pedestrian_trajectory):
     return pedestrian_trajectory
 
 
-# j = 3
-# i = 2
+# j = 2
+# i = 0
 # len(ped_1)
 def get_centroid(points):
     x = [p[0] for p in points]
@@ -750,10 +750,10 @@ def extract_ped_trajectory(CCTV_Ped, intersectionApproachDict, threshold, inters
     return agg_data, ped_trajectory_data, conflict_data
 
 
-# i = 17
+# i = 8
 # i = 0
 # i = 55
-# intersection = 'HOWELL_BR_@_LK_HOWELL'
+# intersection = 'SR434_@_WINDING_HOLLOW'
 
 if __name__ == '__main__':
     # read the google sheet
