@@ -30,7 +30,7 @@ def get_trajectory_slope(trajectory_data, zone_list):
     # convert slope to angle [-90, 90]
     first['trajectory_angle'] = (np.arctan(first['trajectory_slope'])/np.pi)*180
 
-    # convert angle from [-90, 90] to [0, 180]
+    # convert angle from [-90, 90] to [90, 180] and [0, 90]
     first.loc[first['trajectory_slope'] <= 0, 'trajectory_angle'] = \
         first.loc[first['trajectory_slope'] <= 0, 'trajectory_angle'] + 180
 
@@ -191,7 +191,7 @@ def get_ped_conflict_data(CCTV_Ped, threshold, intersect_buffer_x, intersect_buf
             try:
                 trajectory_data = pd.read_csv(os.path.join(sub_intersections_path, video_name, trajectory_data_filename), skiprows=1)
                 # rewrite the type to be the most frequent type for every object
-                object_type = trajectory_data.groupby('objectID', as_index=False).agg({'type': np.median})
+                object_type = trajectory_data.groupby('objectID', as_index=False).agg({'type': pd.Series.mode})
                 trajectory_data = trajectory_data.join(object_type.set_index('objectID'), on='objectID', rsuffix='_new')
                 trajectory_data = trajectory_data.drop(columns='type')
                 trajectory_data.rename(columns={'type_new': 'type'}, inplace=True)
@@ -242,6 +242,6 @@ if __name__ == '__main__':
     conflict_data.to_csv('conflict_data_r13.csv', sep=',')
 
 
-# intersection = 'US17-92_@_25TH_ST'
-# i = 71
+# intersection = 'US17-92_@_3RD_ST'
+# i = 6
 # ped = 529
