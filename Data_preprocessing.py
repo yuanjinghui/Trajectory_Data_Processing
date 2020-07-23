@@ -42,7 +42,12 @@ def trajectory_cleaning(trajectory_data):
 
 def identify_actual_ped_num(pedestrian_trajectory):
     # identify the actual number of pedestrian
+    pedestrian_trajectory = pedestrian_trajectory[pedestrian_trajectory['lostCounter'] == 0].reset_index(drop=True)
+
     ped_trajectory_start_end = get_trajectory_slope(pedestrian_trajectory, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+    # convert the trajectory_angle from [90, 180] and [0, 90] to [0, 90] and [90, 180]
+    ped_trajectory_start_end['trajectory_angle'] = (np.arctan(ped_trajectory_start_end['trajectory_slope']) / np.pi) * 180 + 90
 
     ped_trajectory_start_end['actual_ped_num'] = 0
     for i in range(len(ped_trajectory_start_end) - 1):
@@ -53,8 +58,7 @@ def identify_actual_ped_num(pedestrian_trajectory):
         ped_num = ped_trajectory_start_end.loc[i, 'actual_ped_num']
         angle = ped_trajectory_start_end.loc[i, 'trajectory_angle']
 
-        slope = ped_trajectory_start_end.loc[i, 'trajectory_slope']
-        angle_r = (np.arctan(slope) / np.pi) * 180 + 90
+        tem_max = ped_trajectory_start_end['actual_ped_num'].max()
 
         for j in range(i + 1, len(ped_trajectory_start_end)):
             first_x_2 = ped_trajectory_start_end.loc[j, 'cx_first']
@@ -68,21 +72,25 @@ def identify_actual_ped_num(pedestrian_trajectory):
             connect_angle = (np.arctan(connect_slope) / np.pi) * 180 + 90
 
             # select the threshold of 25 to identify whether the two trajectory belong to one ped
-            if (dist < 100 and abs(angle_2 - angle) <= 15 and 0 < (first_frame_2 - last_frame) <= 100) \
-                    or (dist < 100 and abs(connect_angle - angle_r) <= 15 and np.sign(last_x-first_x) == np.sign(first_x_2-last_x) and 0 < (first_frame_2 - last_frame) <= 100):
-                ped_trajectory_start_end.loc[j, 'actual_ped_num'] = ped_num
-            elif ped_num_2 >= ped_num:
-                ped_trajectory_start_end.loc[j, 'actual_ped_num'] = ped_num + 1
-            else:
+            if ped_num_2 < tem_max:
+                # print(i, j, 'no change')
                 continue
+
+            elif (dist < 125 and abs(angle_2 - angle) <= 22.5 and np.sign(last_x-first_x) == np.sign(first_x_2-last_x) and 0 < (first_frame_2 - last_frame) <= 100) \
+                    or (dist < 125 and abs(connect_angle - angle) <= 22.5 and np.sign(last_x-first_x) == np.sign(first_x_2-last_x) and 0 < (first_frame_2 - last_frame) <= 100):
+                ped_trajectory_start_end.loc[j, 'actual_ped_num'] = ped_num
+                # print(i, j, ped_num)
+            else:
+                ped_trajectory_start_end.loc[j, 'actual_ped_num'] = tem_max + 1
+                # print(i, j, tem_max + 1)
 
     # agg_ped = ped_trajectory_start_end.groupby(by='actual_ped_num', as_index=False).agg({'objectID': lambda x: x.unique().tolist()})
     pedestrian_trajectory = pedestrian_trajectory.join(ped_trajectory_start_end[['objectID', 'actual_ped_num']].set_index('objectID'), on='objectID')
     pedestrian_trajectory = pedestrian_trajectory.sort_values(by=['actual_ped_num', 'frameNUM']).reset_index(drop=True)
 
     return pedestrian_trajectory, ped_trajectory_start_end[['objectID', 'actual_ped_num']]
-# i = 0
-# j = 1
+# i = 3
+# j = 4
 # np.sign(-3)
 
 
@@ -115,7 +123,7 @@ def del_duplicate_trajectory(pedestrian_trajectory):
                         coefficient_of_variance = ped_1['relative_dist'].std()/ped_1['relative_dist'].mean()
 
                         # identify the overlapping based on the coefficient of variance in relative distance
-                        if coefficient_of_variance < 0.15 and ped_1['relative_dist'].mean() < 50:
+                        if (coefficient_of_variance < 0.15 and ped_1['relative_dist'].mean() < 50) or (ped_1['relative_dist'].std() < 5 and ped_1['relative_dist'].mean() < 50):
                             overlapped_id.append(actual_id_2)
                             tem_dict = tem_dict.drop(j, axis=0)
 
@@ -142,7 +150,7 @@ def del_duplicate_trajectory(pedestrian_trajectory):
     return pedestrian_trajectory
 
 
-# j = 2
+# j = 1
 # i = 0
 # len(ped_1)
 def get_centroid(points):
@@ -222,7 +230,7 @@ def identify_crossing_ped(trajectory_data, crosswalk_length, crosswalk_angle):
         # identify the crossing pedestrian based on two types of conditions
         # tem_agg_ped_trajectory['crossing_ped'] = np.where(((tem_agg_ped_trajectory['zone'].str.contains('|'.join(['2', '3', '4']))) & (tem_agg_ped_trajectory['trajectory_length'] > 0.7 * crosswalk_length))
         #                                                   | ((tem_agg_ped_trajectory['trajectory_angle'].between(crosswalk_angle - 22.5, crosswalk_angle + 22.5)) & (tem_agg_ped_trajectory['trajectory_length'] > 0.7 * crosswalk_length)), 1, 0)
-        tem_agg_ped_trajectory['crossing_ped'] = np.where((tem_agg_ped_trajectory['trajectory_angle'].between(crosswalk_angle - 22.5, crosswalk_angle + 22.5)) & (tem_agg_ped_trajectory['trajectory_length'] > 0.5 * crosswalk_length), 1, 0)
+        tem_agg_ped_trajectory['crossing_ped'] = np.where((tem_agg_ped_trajectory['trajectory_angle'].between(crosswalk_angle - 15, crosswalk_angle + 15)) & (tem_agg_ped_trajectory['trajectory_length'] > 0.4 * crosswalk_length), 1, 0)
 
         crossing_ped = tem_agg_ped_trajectory.loc[tem_agg_ped_trajectory['crossing_ped'] == 1, 'objectID'].values.tolist()
 
@@ -669,7 +677,6 @@ def extract_ped_trajectory(CCTV_Ped, intersectionApproachDict, threshold, inters
                 cap = cv2.VideoCapture(os.path.join(sub_intersections_path, video_name, trajectory_video_path))
                 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 sub_video_start_frame = sub_video_end_frame - total_frames + 1
-
                 sub_video_start_time = df_frame_time.loc[df_frame_time['frameNum'] == sub_video_start_frame, 'time'].values[0]
                 sub_video_start_time = pd.Timestamp(sub_video_start_time).to_pydatetime()
 
@@ -709,7 +716,7 @@ def extract_ped_trajectory(CCTV_Ped, intersectionApproachDict, threshold, inters
                         conflicts['intersection'] = intersection
                         conflicts['video_name'] = video_name
                         conflicts['sub_id'] = sub_id
-                        print(intersection, video_name, sub_id)
+                        print(video_name, sub_id)
                         total_conflicts.append(conflicts)
 
                         # join the crossing behavior variables with conflict data
@@ -749,11 +756,12 @@ def extract_ped_trajectory(CCTV_Ped, intersectionApproachDict, threshold, inters
 
     return agg_data, ped_trajectory_data, conflict_data
 
-
-# i = 8
+# test = trajectory_data[trajectory_data['objectID'] == 157]
+# i = 28
 # i = 0
 # i = 55
-# intersection = 'SR434_@_WINDING_HOLLOW'
+# intersection = 'US17-92_@_25TH_ST'
+
 
 if __name__ == '__main__':
     # read the google sheet
@@ -774,7 +782,7 @@ if __name__ == '__main__':
     # conflict_data = get_ped_conflict_data(CCTV_Ped, threshold, intersect_buffer_x, intersect_buffer_y)
     print(time.process_time() - start)
 
-    agg_data.to_csv('agg_data.csv', sep=',')
+    agg_data.to_csv('agg_data_r.csv', sep=',')
     ped_trajectory_data.to_csv('trajectory_data.csv', sep=',')
     conflict_data.to_csv('conflict_data.csv', sep=',')
 

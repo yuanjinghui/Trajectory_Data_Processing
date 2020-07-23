@@ -56,20 +56,20 @@ def ped_reclassification(trajectory_data):
     """
     first = get_trajectory_slope(trajectory_data, [5])
 
-    general_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['cy_first'] < first['cy_last']) & (first['trajectory_length'] >= 50)]['trajectory_angle'].quantile(0.5)
-    min_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['cy_first'] < first['cy_last']) & (first['trajectory_length'] >= 50)]['trajectory_angle'].min()
-    max_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['cy_first'] < first['cy_last']) & (first['trajectory_length'] >= 50)]['trajectory_angle'].max()
+    general_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['trajectory_length'] >= 50)]['trajectory_angle'].quantile(0.5)
+    min_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['trajectory_length'] >= 50)]['trajectory_angle'].min()
+    max_angle = first.loc[(first['counts'] >= 30) & (first['type_last'].isin([2, 5, 7])) & (first['trajectory_length'] >= 50)]['trajectory_angle'].max()
 
     # modify the pedestrian in zone 5 and 6 traveling in line with vehicles to be motorcycle
     if general_angle <= 90:
         try:
             ped_zone_5 = get_trajectory_slope(trajectory_data, [5])
             ped_motorcyce_5 = ped_zone_5.loc[(ped_zone_5['type_last'].isin([0, 1])) & ((ped_zone_5['counts'] >= 30) | (ped_zone_5['trajectory_length'] >= 100)) &
-                                             (ped_zone_5['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), 180 - general_angle))]['objectID'].tolist()
+                                             (ped_zone_5['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
 
             ped_zone_6 = get_trajectory_slope(trajectory_data, [6])
             ped_motorcyce_6 = ped_zone_6.loc[(ped_zone_6['type_last'].isin([0, 1])) & ((ped_zone_6['counts'] >= 30) | (ped_zone_6['trajectory_length'] >= 100)) &
-                                             (ped_zone_6['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), 180 - general_angle))]['objectID'].tolist()
+                                             (ped_zone_6['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
 
             trajectory_data.loc[(trajectory_data['objectID'].isin(ped_motorcyce_5)) | (trajectory_data['objectID'].isin(ped_motorcyce_6)), 'type'] = 3
         except:
@@ -80,11 +80,11 @@ def ped_reclassification(trajectory_data):
         try:
             ped_zone_5 = get_trajectory_slope(trajectory_data, [5])
             ped_motorcyce_5 = ped_zone_5.loc[(ped_zone_5['type_last'].isin([0, 1])) & ((ped_zone_5['counts'] >= 30) | (ped_zone_5['trajectory_length'] >= 100)) &
-                                             (ped_zone_5['trajectory_angle'].between(180 - general_angle, min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
+                                             (ped_zone_5['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
 
             ped_zone_6 = get_trajectory_slope(trajectory_data, [6])
             ped_motorcyce_6 = ped_zone_6.loc[(ped_zone_6['type_last'].isin([0, 1])) & ((ped_zone_6['counts'] >= 30) | (ped_zone_6['trajectory_length'] >= 100)) &
-                                             (ped_zone_6['trajectory_angle'].between(180 - general_angle, min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
+                                             (ped_zone_6['trajectory_angle'].between(max(min_angle - 10, general_angle - 22.5), min(max_angle + 10, general_angle + 22.5)))]['objectID'].tolist()
 
             trajectory_data.loc[(trajectory_data['objectID'].isin(ped_motorcyce_5)) | (trajectory_data['objectID'].isin(ped_motorcyce_6)), 'type'] = 3
         except:
